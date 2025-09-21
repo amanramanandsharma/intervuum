@@ -1,8 +1,9 @@
 import { Component, signal } from '@angular/core';
+import { MeetingComponent } from './meeting/meeting.component';
 
 @Component({
   selector: 'app-root',
-  imports: [],
+  imports: [MeetingComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })

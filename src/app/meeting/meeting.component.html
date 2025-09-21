@@ -1,0 +1,59 @@
+<div class="meeting-grid">
+  <main class="stage" [class.speaker]="speakerViewSig()">
+    <!-- MAIN GRID/SPEAKER = REMOTE PARTICIPANTS ONLY -->
+    <app-ai-interviewer
+      *ngIf="remoteParticipants().length === 0"
+      [talking]="aiTalking"
+      [showBubble]="aiTyping"
+      name="Interviewer AI"
+    >
+    </app-ai-interviewer>
+
+    <div class="grid" *ngIf="!speakerViewSig()">
+      <app-video-tile *ngFor="let p of remoteParticipants()" [participant]="p" [isSelf]="false" />
+    </div>
+
+    <div class="speaker-wrap" *ngIf="speakerViewSig()">
+      <app-video-tile
+        [participant]="activeSpeakerRemote() || me()"
+        [isSelf]="activeSpeakerRemote()?.id === rtc.selfId"
+      ></app-video-tile>
+      <div class="thumbs">
+        <app-video-tile
+          *ngFor="let p of remoteParticipants()"
+          [participant]="p"
+          [isSelf]="false"
+        ></app-video-tile>
+      </div>
+    </div>
+
+    <!-- ✅ SELF PREVIEW AS PIP OVERLAY -->
+    <div class="pip" *ngIf="me()">
+      <app-video-tile [participant]="me()" [isSelf]="true"></app-video-tile>
+    </div>
+
+    <!-- Floating controls (unchanged) -->
+    <div class="floating-controls">
+      <button class="btn danger" (click)="leave()">Leave</button>
+      <button class="btn" (click)="toggleMic()">{{ me()?.isMuted ? 'Unmute' : 'Mute' }}</button>
+      <button class="btn" (click)="toggleCam()">
+        {{ me()?.isCameraOff ? 'Start Cam' : 'Stop Cam' }}
+      </button>
+      <button class="btn" (click)="share()">
+        {{ me()?.isScreenSharing ? 'Stop Share' : 'Share Screen' }}
+      </button>
+      <button class="btn" (click)="raise()">✋ Hand</button>
+      <button class="btn ghost" (click)="rtc.toggleSpeakerView()">
+        {{ speakerViewSig() ? 'Grid View' : 'Speaker View' }}
+      </button>
+      <button class="btn ghost" (click)="toggleParticipants()">
+        Participants ({{ participantsArr().length }})
+      </button>
+      <button class="btn ghost" (click)="toggleChat()">Chat</button>
+      <button class="btn ghost" (click)="toggleConnect()">Connect…</button>
+    </div>
+
+    <!-- side panels + connect pop remain as you have -->
+  </main>
+  <app-transcript-sidebar></app-transcript-sidebar>
+</div>

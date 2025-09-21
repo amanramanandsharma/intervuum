@@ -1,0 +1,19 @@
+  <aside class="txp">
+    <header>
+      <h3>Transcripts</h3>
+      <div class="actions">
+        <button class="btn" (click)="toggleRecord()">
+          {{ svc.isRecording() ? 'Stop' : 'Start' }}
+        </button>
+        <button class="btn ghost" (click)="svc.clear()">Clear</button>
+      </div>
+    </header>
+
+    <div class="list">
+      <div class="item" *ngFor="let it of items()">
+        <div class="time">{{ time(it.created_ts) }}</div>
+        <div class="text">{{ it.text }}</div>
+      </div>
+      <div class="empty" *ngIf="!items().length">No transcripts yet.</div>
+    </div>
+  </aside>

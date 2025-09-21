@@ -1,0 +1,12 @@
+<div class="tile" [class.muted]="participant?.isMuted" [class.camera-off]="participant?.isCameraOff">
+    <video #vid autoplay playsinline [muted]="isSelf"></video>
+    <div class="badge">
+      <span class="name">{{ participant?.displayName }}</span>
+      <span class="pill" *ngIf="participant?.isMuted">Muted</span>
+      <span class="pill" *ngIf="participant?.isScreenSharing">Screen</span>
+      <span class="pill" *ngIf="participant?.raisedHand">✋</span>
+    </div>
+    <div class="avatar" *ngIf="participant?.isCameraOff || !hasVideo">
+      {{ initials(participant?.displayName || '?') }}
+    </div>
+  </div>

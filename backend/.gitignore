@@ -1,0 +1,106 @@
+# ===== Python bytecode / cache =====
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.pyre/
+.pytype/
+.pyrightcache/
+
+# ===== Virtual environments =====
+.venv/
+venv/
+ENV/
+env/
+.conda/
+.venv*/        # e.g., .venv38, .venv-local
+
+# ===== OS / Editor junk =====
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+*.swp
+*.swo
+
+# ===== IDE settings =====
+.vscode/
+.idea/
+*.iml
+
+# ===== Packages / build artifacts =====
+.build/
+build/
+dist/
+downloads/
+sdist/
+develop-eggs/
+.eggs/
+eggs/
+lib/
+lib64/
+parts/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===== Logs =====
+logs/
+*.log
+uvicorn*.log
+
+# ===== Test / Coverage =====
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+hypothesis/
+.hypothesis/
+junit.xml
+
+# ===== Type checking =====
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ===== Docs / Sphinx =====
+docs/_build/
+site/
+
+# ===== Jupyter =====
+.ipynb_checkpoints/
+
+# ===== Translations =====
+*.mo
+*.pot
+
+# ===== Celery / Task queues =====
+celerybeat-schedule
+celerybeat.pid
+
+# ===== dotenv (keep example) =====
+.env
+.env.*
+!.env.example
+
+# ===== Local data / temp =====
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+
+# ===== FastAPI uploads (if you stage files locally) =====
+uploads/
+runtime/

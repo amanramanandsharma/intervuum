@@ -1,0 +1,50 @@
+<div class="ai-wrap" role="img" [attr.aria-label]="ariaLabel">
+    <div class="bg-orb"></div>
+
+    <!-- Head -->
+    <div class="head" [class.talking]="talking">
+      <!-- Face (SVG so it stays crisp) -->
+      <svg viewBox="0 0 200 200" class="face" aria-hidden="true">
+        <!-- soft gradient face -->
+        <defs>
+          <radialGradient id="g" cx="50%" cy="40%" r="70%">
+            <stop offset="0%"  stop-color="#8ad4ff"/>
+            <stop offset="55%" stop-color="#6aa3ff"/>
+            <stop offset="100%" stop-color="#4254ff"/>
+          </radialGradient>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- face circle -->
+        <circle cx="100" cy="100" r="74" fill="url(#g)" filter="url(#glow)"/>
+        <!-- cheeks -->
+        <circle cx="70"  cy="115" r="10" fill="#ff8fb3" opacity=".35"/>
+        <circle cx="130" cy="115" r="10" fill="#ff8fb3" opacity=".35"/>
+        <!-- eyes -->
+        <g class="eyes">
+          <ellipse cx="75"  cy="90" rx="8" ry="12" fill="#0b0b0b"/>
+          <ellipse cx="125" cy="90" rx="8" ry="12" fill="#0b0b0b"/>
+          <!-- eyelids (blink) -->
+          <rect class="lid l" x="67"  y="78" width="16" height="24" rx="8"/>
+          <rect class="lid r" x="117" y="78" width="16" height="24" rx="8"/>
+        </g>
+        <!-- mouth (scaleY anim when talking) -->
+        <rect class="mouth" x="85" y="124" width="30" height="8" rx="4" />
+      </svg>
+      <!-- subtle name tag -->
+      <div class="name">{{ name }}</div>
+    </div>
+
+    <!-- Equalizer -->
+    <div class="eq" [class.active]="talking">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <!-- “Typing” bubble (optional vibe) -->
+    <div class="bubble" *ngIf="showBubble">
+      <i></i><i></i><i></i>
+    </div>
+  </div>

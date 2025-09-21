@@ -1,0 +1,218 @@
+/* Ensure the app uses the full viewport and never scrolls */
+:host,
+.meeting-root,
+.stage {
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* PiP self preview (like Meet/FaceTime) */
+.pip {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(320px, 28vw);
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+  /* Optional: allow dragging cursor hint */
+  cursor: move;
+}
+
+/* Make the inner tile fit PiP nicely */
+.pip app-video-tile .tile {
+  aspect-ratio: 16 / 9;
+}
+
+/* Keep side panels inside the viewport; no page scroll */
+.sidepanel {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden; /* panel itself doesn’t scroll the page */
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.sidepanel .chat {
+  overflow: auto;
+} /* internal scroll only */
+
+.corner.brand {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  z-index: 5;
+  opacity: 0.8;
+}
+
+.stage {
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+.stage.speaker {
+  grid-template-columns: 1fr auto;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-content: start;
+  height: 100%;
+}
+.speaker-wrap {
+  display: grid;
+  grid-template-rows: 1fr 160px;
+  gap: 12px;
+  padding: 12px;
+  height: 100%;
+}
+.thumbs {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+/* When you're alone, make your tile fill the screen */
+.grid:only-child,
+.grid:has(app-video-tile:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.sidepanel h3 {
+  margin: 4px 0 12px;
+}
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #48d597;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.dot.me {
+  background: #3a68ff;
+}
+
+/* Floating controls */
+.floating-controls {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 20px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: rgba(15, 16, 18, 0.8);
+  padding: 10px 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  z-index: 4;
+}
+.btn {
+  background: #1d1f24;
+  border: none;
+  color: #eaeaea;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.btn:hover {
+  background: #2a2d34;
+}
+.btn.primary {
+  background: #3a68ff;
+}
+.btn.danger {
+  background: #ff4d4d;
+}
+.btn.ghost {
+  background: transparent;
+  border: 1px solid #2b2b2b;
+}
+
+/* Chat panel bits */
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.msg .meta {
+  font-size: 12px;
+  color: #9aa0a6;
+}
+.bubble {
+  background: #1b1d22;
+  padding: 8px 10px;
+  border-radius: 10px;
+  display: inline-block;
+  margin-top: 2px;
+}
+.composer {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.composer input {
+  flex: 1;
+  background: #141518;
+  border: 1px solid #26282f;
+  color: #eaeaea;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+/* Connect popover */
+.connect-pop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 6;
+}
+.connect-pop .card {
+  background: #0f1012;
+  border: 1px solid #2b2b2b;
+  padding: 16px;
+  border-radius: 14px;
+  width: min(420px, 92vw);
+  display: grid;
+  gap: 8px;
+}
+.connect-pop label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.connect-pop input {
+  background: #141518;
+  border: 1px solid #26282f;
+  color: #eaeaea;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.connect-pop .row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.meeting-grid {
+  display: grid;
+  grid-template-columns: 1fr 360px; /* stage + sidebar */
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
