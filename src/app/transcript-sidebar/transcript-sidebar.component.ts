@@ -1,26 +1,46 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TranscribeService } from './transcribe.service';
-
 @Component({
   selector: 'app-transcript-sidebar',
-  standalone: true,
   imports: [CommonModule],
   templateUrl: './transcript-sidebar.component.html',
   styleUrls: ['./transcript-sidebar.component.scss'],
 })
-export class TranscriptSidebarComponent {
+export class TranscriptSidebarComponent implements OnDestroy {
 
-  constructor(public tx: TranscribeService) {
-  // optional: point to your FastAPI server once
-  this.tx.setBackend('http://localhost:8000');
-}
+  // expose observables for the template (use | async)
+  isRecording$;
+  apiCallFlag$;
+  audioUrl$;
+  transcription$;
+  error$;
 
-  svc = inject(TranscribeService);
-  items = computed(() => this.svc.items());
-
-  toggleRecord(){
-    this.svc.isRecording() ? this.svc.stop() : this.svc.start();
+  constructor(public transcript: TranscribeService) {
+    this.isRecording$ = this.transcript.isRecording$;
+    this.apiCallFlag$ = this.transcript.apiCallFlag$;
+    this.audioUrl$ = this.transcript.audioUrl$;
+    this.error$ = this.transcript.error$;
   }
-  time(ms:number){ return new Date(ms).toLocaleTimeString(); }
+
+  ngOnDestroy(): void {
+    // ensure mic tracks are closed and blob URLs are revoked
+    this.transcript.destroy();
+  }
+
+  startRecording(): void {
+    this.transcript.startRecording();
+  }
+
+  stopRecording(): void {
+    this.transcript.stopRecording();
+  }
+
+  rows = computed(() => 
+    this.transcript.transcriptions().map(item => ({
+      text: item.item.text,
+      who: item.speaker ?? 'User',
+      atSec: item.item.created_ts 
+    }))
+  );
 }

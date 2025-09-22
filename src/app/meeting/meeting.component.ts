@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -7,16 +7,25 @@ import { VideoTileComponent } from '../video-tile/video-tile.component';
 import { AiInterviewerComponent } from '../ai-interviewer/ai-interviewer.component';
 import { ChatMessage, Participant } from '../models';
 import { TranscriptSidebarComponent } from '../transcript-sidebar/transcript-sidebar.component';
+import { TranscribeService } from '../transcript-sidebar/transcribe.service';
 
 @Component({
   selector: 'app-meeting',
   standalone: true,
-  imports: [CommonModule, FormsModule, VideoTileComponent, AiInterviewerComponent, TranscriptSidebarComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    VideoTileComponent,
+    AiInterviewerComponent,
+    TranscriptSidebarComponent,
+  ],
   templateUrl: './meeting.component.html',
   styleUrls: ['./meeting.component.scss'],
 })
-export class MeetingComponent {
+export class MeetingComponent implements OnDestroy,  OnInit {
   rtc = inject(WebRTCService);
+  // Inside your component
+  isRecording = false;
 
   aiTalking = false; // set true while TTS audio plays
   aiTyping = false; // set true while you "prepare" an answer
@@ -41,12 +50,26 @@ export class MeetingComponent {
   displayName = 'Me';
   draft = '';
 
-  constructor() {
+  isRecording$;
+  apiCallFlag$;
+  audioUrl$;
+  transcription$;
+  error$;
+
+  constructor(public transcript: TranscribeService) {
     // Start local media immediately so your tile is visible on first paint
     this.rtc.initLocalMedia().catch((err) => {
       console.error('Local media failed', err);
       alert('Camera/mic permission blocked or unavailable.');
     });
+
+    this.isRecording$ = this.transcript.isRecording$;
+    this.apiCallFlag$ = this.transcript.apiCallFlag$;
+    this.audioUrl$ = this.transcript.audioUrl$;
+    this.error$ = this.transcript.error$;
+  }
+  ngOnInit(): void {
+    // throw new Error('Method not implemented.');
   }
 
   // Helpers
@@ -82,8 +105,23 @@ export class MeetingComponent {
   }
 
   toggleMic() {
-    this.me()?.isMuted ? this.rtc.mute(true) : this.rtc.mute(false);
+    // if(this.me()?.isMuted){
+    //   this.rtc.mute(true);
+    //   // this.transcript.stopRecording();
+    // }else{
+    //   this.rtc.mute(false);
+    //   // this.transcript.startRecording();
+    // }
+
+    if(this.isRecording){
+      this.transcript.stopRecording();
+      this.isRecording = false;
+    }else{
+      this.transcript.startRecording();
+      this.isRecording = true;
+    }
   }
+
   toggleCam() {
     this.me()?.isCameraOff ? this.rtc.camera(false) : this.rtc.camera(true);
   }
@@ -101,6 +139,19 @@ export class MeetingComponent {
     if (!text) return;
     this.rtc.sendChat(text);
     this.draft = '';
+  }
+
+  ngOnDestroy(): void {
+    // ensure mic tracks are closed and blob URLs are revoked
+    this.transcript.destroy();
+  }
+
+  startRecording(): void {
+    this.transcript.startRecording();
+  }
+
+  stopRecording(): void {
+    this.transcript.stopRecording();
   }
 
   time(ts: number) {

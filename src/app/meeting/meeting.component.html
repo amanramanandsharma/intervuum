@@ -35,7 +35,7 @@
     <!-- Floating controls (unchanged) -->
     <div class="floating-controls">
       <button class="btn danger" (click)="leave()">Leave</button>
-      <button class="btn" (click)="toggleMic()">{{ me()?.isMuted ? 'Unmute' : 'Mute' }}</button>
+      <button class="btn" (click)="toggleMic()">{{ isRecording ? 'Mute' : 'Unmute' }}</button>
       <button class="btn" (click)="toggleCam()">
         {{ me()?.isCameraOff ? 'Start Cam' : 'Stop Cam' }}
       </button>
@@ -46,11 +46,6 @@
       <button class="btn ghost" (click)="rtc.toggleSpeakerView()">
         {{ speakerViewSig() ? 'Grid View' : 'Speaker View' }}
       </button>
-      <button class="btn ghost" (click)="toggleParticipants()">
-        Participants ({{ participantsArr().length }})
-      </button>
-      <button class="btn ghost" (click)="toggleChat()">Chat</button>
-      <button class="btn ghost" (click)="toggleConnect()">Connect…</button>
     </div>
 
     <!-- side panels + connect pop remain as you have -->

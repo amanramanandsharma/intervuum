@@ -1,160 +1,146 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, OnDestroy, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Subject, firstValueFrom } from 'rxjs';
 
-export interface TranscriptItem {
-  id: string;
-  text: string;
-  created_ts: number; // ms epoch from backend
-}
-
-export interface TranscribeStartOpts {
-  /** Chunk duration in ms (default 4000). */
-  chunkMs?: number;
-  /** Optional language hint sent as form field. */
-  languageHint?: string;
-  /** Optional backend override just for this session. */
-  backendUrl?: string;
+interface TranscriptionResponse {
+  transcription?: string;
+  [k: string]: any;
 }
 
 @Injectable({ providedIn: 'root' })
-export class TranscribeService {
-  // ===== Public reactive state =====
-  readonly items = signal<TranscriptItem[]>([]);
-  readonly isRecording = signal(false);
-  readonly sessionId = signal<string | null>(null);
-  readonly backendUrl = signal<string>('http://localhost:8000'); // FastAPI base
+export class TranscribeService implements OnDestroy {
+  // === public reactive state (bind in component template via async pipe) ===
+  private _isRecording = new BehaviorSubject<boolean>(false);
+  isRecording$ = this._isRecording.asObservable();
 
-  // ===== Internals =====
-  private recorder?: MediaRecorder;
-  private chunkMs = 4000;
-  private languageHint?: string;
-  private uploadQueue: Blob[] = [];
-  private uploading = false;
-  private abortCtrl?: AbortController;
+  private _apiCallFlag = new BehaviorSubject<boolean>(false);
+  apiCallFlag$ = this._apiCallFlag.asObservable();
 
-  /** Set the FastAPI server URL globally (e.g., from an env). */
-  setBackend(url: string) { this.backendUrl.set(url.replace(/\/+$/, '')); }
+  private _audioUrl = new BehaviorSubject<string | undefined>(undefined);
+  audioUrl$ = this._audioUrl.asObservable();
 
-  /** Start mic capture and chunked uploads. */
-  async start(opts: TranscribeStartOpts = {}) {
-    if (this.isRecording()) return;
+  transcriptions = signal<any[]>([]);
 
-    if (opts.backendUrl) this.setBackend(opts.backendUrl);
-    this.chunkMs = opts.chunkMs ?? 4000;
-    this.languageHint = opts.languageHint;
+  private _error = new Subject<string>();
+  error$ = this._error.asObservable();
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    const mime = this.pickMimeType();
-    this.recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    this.abortCtrl = new AbortController();
+  // === internals ===
+  private mediaRecorder?: MediaRecorder;
+  private mediaStream?: MediaStream;
+  private audioChunks: BlobPart[] = [];
+  private lastObjectUrl?: string;
 
-    this.recorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size) {
-        this.uploadQueue.push(ev.data);
-        this.flushQueue(); // fire-and-forget
-      }
-    };
-    this.recorder.onerror = (e) => {
-      console.error('MediaRecorder error', e);
-      this.stop(); // fail-safe
-    };
+  // === CONFIG ===
+  private readonly uploadUrl = 'http://localhost:8000/transcribe'; // <--- change as needed
 
-    this.recorder.start(this.chunkMs);
-    this.isRecording.set(true);
+  constructor(private http: HttpClient) {}
+
+  ngOnDestroy(): void {
+    this.destroy();
   }
 
-  /** Stop recording and close tracks. Any queued chunks will finish uploading. */
-  stop() {
-    try { this.recorder?.stop(); } catch {}
-    this.recorder?.stream.getTracks().forEach(t => t.stop());
-    this.recorder = undefined;
-    this.isRecording.set(false);
-    // You can optionally cancel inflight requests:
-    // this.abortCtrl?.abort();
-    // this.abortCtrl = undefined;
+  /** Start capturing mic and recording one continuous chunk. */
+  async startRecording(): Promise<void> {
+    if (this._isRecording.value) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      this.mediaStream = stream;
+
+      const mimeType = this.pickMimeType();
+      this.mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      this.audioChunks = [];
+      this._isRecording.next(true);
+      this._apiCallFlag.next(false);
+
+      this.mediaRecorder.ondataavailable = (event: any /* BlobEvent */) => {
+        if (event?.data && event.data.size > 0) this.audioChunks.push(event.data);
+      };
+
+      this.mediaRecorder.onstop = async () => {
+        this._isRecording.next(false);
+        this._apiCallFlag.next(true);
+
+        try {
+          const type = this.mediaRecorder?.mimeType || mimeType || 'audio/webm';
+          const audioBlob = new Blob(this.audioChunks, { type });
+
+          if (this.lastObjectUrl) URL.revokeObjectURL(this.lastObjectUrl);
+          this.lastObjectUrl = URL.createObjectURL(audioBlob);
+          this._audioUrl.next(this.lastObjectUrl);
+
+          const res = await this.uploadAudio(audioBlob);
+          if (res) {
+            this.appendTranscription(res);
+            // this.transcriptions.push(res.transcription);
+          }
+        } catch (e: any) {
+          this._error.next(String(e?.message || e));
+        } finally {
+          this._apiCallFlag.next(false);
+        }
+      };
+
+      this.mediaRecorder.start(); // record as one big chunk; we’ll get it on stop
+    } catch (err: any) {
+      this._error.next(`getUserMedia error: ${err?.message || err}`);
+    }
   }
 
-  /** Clear UI state and forget the server session id. */
-  clear() {
-    this.items.set([]);
-    this.sessionId.set(null);
-    this.uploadQueue = [];
+  /** Stop recording; triggers onstop → blob build → upload. */
+  stopRecording(): void {
+    if (!this.mediaRecorder) return;
+    try {
+      if (this.mediaRecorder.state !== 'inactive') this.mediaRecorder.stop();
+    } catch {}
+    try {
+      this.mediaStream?.getTracks().forEach((t) => t.stop());
+    } catch {}
+    this.mediaStream = undefined;
   }
 
-  /** Optional: manually push a Blob (e.g., from file input) to the same pipeline. */
-  enqueue(blob: Blob) {
-    this.uploadQueue.push(blob);
-    this.flushQueue();
+  /** Cleanup when component is destroyed or when you want to reset the service. */
+  destroy(): void {
+    try {
+      this.mediaStream?.getTracks().forEach((t) => t.stop());
+    } catch {}
+    this.mediaStream = undefined;
+    if (this.lastObjectUrl) {
+      URL.revokeObjectURL(this.lastObjectUrl);
+      this.lastObjectUrl = undefined;
+    }
   }
 
-  // ===== Helpers =====
+  // ===== helper bits =====
 
-  private pickMimeType(): string | null {
+  private pickMimeType(): string | undefined {
     const prefs = [
       'audio/webm;codecs=opus',
       'audio/ogg;codecs=opus',
       'audio/webm',
-      'audio/ogg'
+      'audio/ogg',
+      'audio/mp4', // Safari/iOS
     ];
-    return prefs.find(m => (window as any).MediaRecorder?.isTypeSupported?.(m)) || null;
+    // @ts-ignore
+    const isSup = (m: string) => window.MediaRecorder?.isTypeSupported?.(m);
+    return prefs.find(isSup);
   }
 
-  private async flushQueue() {
-    if (this.uploading) return;
-    this.uploading = true;
-
-    while (this.uploadQueue.length) {
-      const blob = this.uploadQueue.shift()!;
-      try {
-        await this.sendChunk(blob);
-      } catch (err) {
-        console.error('Upload failed, re-queueing once:', err);
-        // simple one-time retry: push to front and try again once
-        if (!('_retried' in (blob as any))) {
-          (blob as any)._retried = true;
-          this.uploadQueue.unshift(blob);
-        }
-        break; // break loop so we don’t spin
-      }
-    }
-
-    this.uploading = false;
-  }
-
-  private async sendChunk(blob: Blob) {
-    const base = this.backendUrl();
-    const url = `${base}/transcribe`;
+  private async uploadAudio(blob: Blob): Promise<TranscriptionResponse> {
+    const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+    const file = new File([blob], `recording.${ext}`, { type: blob.type || `audio/${ext}` });
 
     const form = new FormData();
-    const ext = blob.type.includes('ogg') ? 'ogg' : 'webm';
-    const file = new File([blob], `part-${Date.now()}.${ext}`, { type: blob.type || `audio/${ext}` });
     form.append('file', file);
-    if (this.sessionId()) form.append('session_id', this.sessionId()!);
-    if (this.languageHint) form.append('language_hint', this.languageHint);
+    // form.append('language_hint', 'en'); // example of an extra field if needed
 
-    // basic exponential backoff
-    const maxAttempts = 3;
-    let attempt = 0, lastErr: any;
+    // Prefer HttpClient (interceptors, error handling, etc.)
+    const req$ = this.http.post<TranscriptionResponse>(this.uploadUrl, form);
+    return firstValueFrom(req$);
+  }
 
-    while (attempt < maxAttempts) {
-      attempt++;
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          body: form,
-          signal: this.abortCtrl?.signal,
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!this.sessionId()) this.sessionId.set(data.session_id);
-        const item = data.item as TranscriptItem;
-        this.items.update(arr => [...arr, item]);
-        return;
-      } catch (e) {
-        lastErr = e;
-        const delay = 300 * Math.pow(2, attempt - 1); // 300ms, 600ms, 1200ms
-        await new Promise(r => setTimeout(r, delay));
-      }
-    }
-    throw lastErr;
+appendTranscription(t: any) {
+    this.transcriptions.update(arr => [...arr, t]);
   }
 }
