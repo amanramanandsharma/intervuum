@@ -1,6 +1,7 @@
 import { Injectable, OnDestroy, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Subject, firstValueFrom } from 'rxjs';
+import { TtsService } from '../services/tts.service';
 
 interface TranscriptionResponse {
   transcription?: string;
@@ -33,7 +34,7 @@ export class TranscribeService implements OnDestroy {
   // === CONFIG ===
   private readonly uploadUrl = 'http://localhost:8000/transcribe'; // <--- change as needed
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private tts: TtsService) {}
 
   ngOnDestroy(): void {
     this.destroy();
@@ -141,6 +142,11 @@ export class TranscribeService implements OnDestroy {
   }
 
 appendTranscription(t: any) {
-    this.transcriptions.update(arr => [...arr, t]);
+    this.transcriptions.update(arr => {
+  const next = [...arr, t];
+  const text = t.item.text ;
+  if (text) { this.tts.stop(); this.tts.speak(text, { queue: false }); }
+  return next;
+});
   }
 }
