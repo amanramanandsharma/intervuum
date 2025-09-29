@@ -39,6 +39,7 @@ export class TranscriptSidebarComponent implements OnDestroy {
   rows = computed(() => 
     this.transcript.transcriptions().map(item => ({
       text: item.item.text,
+      reponse: item.response,
       who: item.speaker ?? 'User',
       atSec: item.item.created_ts 
     }))

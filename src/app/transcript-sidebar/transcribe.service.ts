@@ -144,7 +144,7 @@ export class TranscribeService implements OnDestroy {
 appendTranscription(t: any) {
     this.transcriptions.update(arr => {
   const next = [...arr, t];
-  const text = t.item.text ;
+  const text = t.response ;
   if (text) { this.tts.stop(); this.tts.speak(text, { queue: false }); }
   return next;
 });

@@ -1,9 +1,16 @@
-<aside class="txp">
-  <div class="list">
-   <ul>
-  <li *ngFor="let r of rows()" class="txp-row">
-    <strong>{{ r.who }}</strong> @ {{ r.atSec ?? '—' }}s: {{ r.text }}
-  </li>
-</ul>
+<aside class="chat">
+  <div class="chat-scroll">
+    <ul class="chat-thread">
+      <ng-container *ngFor="let r of rows()">
+        <li class="bubble from-user" *ngIf="r.text">
+          <div class="meta"><strong>You</strong><span class="time">{{ r.atSec | date:'shortTime' }}</span></div>
+          <div class="content">{{ r.text }}</div>
+        </li>
+        <li class="bubble from-ai" *ngIf="r.reponse">
+          <div class="meta"><strong>AI</strong><span class="time">{{ r.atSec | date:'shortTime' }}</span></div>
+          <div class="content">{{ r.reponse }}</div>
+        </li>
+      </ng-container>
+    </ul>
   </div>
 </aside>
