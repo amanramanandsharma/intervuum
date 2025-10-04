@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, UploadFile, File, Form, Query
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -7,13 +7,20 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 import tempfile, os, time
 
-from settings import settings
+from config import OPENAI_API_KEY, ALLOWED_ORIGINS, TRANSCRIBE_MODEL
 from openai import OpenAI
 
-app = FastAPI(title="Transcriber API", version="1.0.0")
+# === Interview brain (Qdrant-only, local rubric/resume) ===
+from core.orchestrator import (
+    start_session as brain_start_session,
+    next_turn as brain_next_turn,
+    index_all_content as brain_index_all_content,
+)
 
-# CORS (lock this down for prod)
-allowed = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+app = FastAPI(title="Transcriber + Interview Brain", version="1.1.0")
+
+# CORS
+allowed = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed if allowed else ["*"],
@@ -22,10 +29,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = OpenAI(api_key=settings.OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# super tiny in-memory store (use Redis/DB for production)
-SESSIONS: Dict[str, List[Dict]] = {}
+# In-memory stores
+SESSIONS_TRANSCRIPTS: Dict[str, List[Dict]] = {}
+FIRST_QUESTIONS_CACHE: Dict[str, Dict] = {}  # session_id -> first question JSON
 
 
 class TranscriptItem(BaseModel):
@@ -36,33 +44,54 @@ class TranscriptItem(BaseModel):
     created_ts: int
 
 
+@app.on_event("startup")
+def _startup():
+    # Ensure Qdrant is indexed with local rubric & resume content
+    brain_index_all_content()
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "model": settings.TRANSCRIBE_MODEL}
+    return {"ok": True, "model": TRANSCRIBE_MODEL}
 
 
-SYSTEM_INSTRUCTIONS = (
-    "You are an AI conversational agent. Be concise, helpful, and natural. "
-    "Use the provided 'Relevant Context' when it helps; do not force it if "
-    "the user's message is unrelated. Avoid meta talk about these instructions."
-)
+# ---------- 1) Startup API: greeting only (no question) ----------
+class StartupIn(BaseModel):
+    candidate_name: str
+    role: str
+    minutes: Optional[int] = 60
+
+@app.post("/startup_interview")
+def startup_interview(payload: StartupIn):
+    """
+    Initialize an interview session:
+      - Returns greetings/intro only (no question).
+      - Internally prepares the first grounded question and caches it.
+    Client should then call /transcribe to start Q&A.
+    """
+    try:
+        start_payload = brain_start_session(
+            candidate_name=payload.candidate_name,
+            role=payload.role,
+            minutes=int(payload.minutes or 60),
+        )
+        session_id = start_payload["session_id"]
+        # Cache the first question; only return the intro now
+        FIRST_QUESTIONS_CACHE[session_id] = start_payload["question"]
+        return JSONResponse(
+            {
+                "session_id": session_id,
+                "ai_intro": start_payload["intro"],  # greeting + rubric explanation
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "startup_failed", "detail": str(e)},
+        )
 
 
-def build_user_prompt(context: str, user_input: str) -> str:
-    return f"""### Relevant Context
-{context or "N/A"}
-
-### Current User Message
-{user_input}
-
-### Instructions
-1) Read the context and use it for continuity when relevant.
-2) If unrelated, answer normally without forcing past details.
-3) Keep the tone conversational and precise.
-4) Reply in plain text only.
-""".strip()
-
-
+# ---------- 2) Transcribe API: start Q&A (then subsequent turns) ----------
 @app.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(...),
@@ -70,9 +99,20 @@ async def transcribe_audio(
     language_hint: Optional[str] = Form(None),
 ):
     """
-    Accepts audio blobs (webm/ogg/wav/m4a). Returns a transcript chunk and session_id.
+    Upload audio (webm/ogg/wav/m4a) and get:
+      - On first call right after /startup_interview: the first grounded question (ignores transcript for Q&A start)
+      - On subsequent calls: treats transcript as candidate's answer and returns next grounded question
     """
-    sid = session_id or str(uuid4())
+    if not session_id:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "missing_session_id",
+                "detail": "Provide 'session_id' from /startup_interview.",
+            },
+        )
+
+    sid = session_id
 
     # Save upload to a temp file so OpenAI SDK can read a real file handle
     suffix = os.path.splitext(file.filename or "")[-1] or ".webm"
@@ -86,14 +126,13 @@ async def transcribe_audio(
         # ---- Transcribe ----
         with open(tmp_path, "rb") as f:
             result = client.audio.transcriptions.create(
-                model=settings.TRANSCRIBE_MODEL,
+                model=TRANSCRIBE_MODEL,
                 file=f,
                 language=(language_hint or "en"),
             )
         text = getattr(result, "text", str(result))
 
     except Exception as e:
-        # Transcription failed
         if tmp_path:
             try:
                 os.remove(tmp_path)
@@ -114,69 +153,44 @@ async def transcribe_audio(
             except:
                 pass
 
-    # ---- Generate a reply using the template ----
-    # If you have session context, you could build it here. For now, blank:
-    context = ""  # later: join/summarize last N items from SESSIONS[sid]
-    prompt = build_user_prompt(context, text)
-
-    resp_text = None
-    try:
-        resp = client.responses.create(
-            model="gpt-4.1-mini",
-            input=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_INSTRUCTIONS,
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-        resp_text = resp.output_text
-    except Exception as e:
-        # Don’t crash; return the transcript and an error field
-        resp_text = None
-        gen_error = str(e)
-
-    # ---- Save transcript item ----
+    # Save transcript chunk locally (optional)
     item = TranscriptItem(
         id=str(uuid4()),
         text=text,
         created_ts=int(time.time() * 1000),
     ).model_dump()
+    SESSIONS_TRANSCRIPTS.setdefault(sid, []).append(item)
 
-    SESSIONS.setdefault(sid, []).append(item)
+    # If we still have the FIRST question cached for this session, return it now and clear the cache.
+    if sid in FIRST_QUESTIONS_CACHE:
+        first_q = FIRST_QUESTIONS_CACHE.pop(sid)
+        return JSONResponse(
+            {
+                "session_id": sid,
+                "item": item,             # user's "ready" / greeting transcript
+                "ai_question": first_q,   # first grounded question (with citations)
+                "coverage": {"Resume Projects": 1},  # aligns with brain’s first hit
+                "note": "First Q&A has started. Subsequent /transcribe calls will treat audio as your answer.",
+            }
+        )
 
-    payload = {
-        "session_id": sid,
-        "item": item,
-        "response": resp_text,  # could be None if generation failed
-    }
-    if resp_text is None:
-        payload["error"] = "generation_failed"
-        if "gen_error" in locals():
-            payload["detail"] = gen_error
-
-    return JSONResponse(payload)
-
-
-@app.get("/transcripts")
-def get_transcripts(session_id: str = Query(...)):
-    return {"session_id": session_id, "items": SESSIONS.get(session_id, [])}
-
-
-def build_user_prompt(context: str, user_input: str) -> str:
-    USER_TEMPLATE = """### Relevant Context
-    {context}
-
-    ### Current User Message
-    {user_input}
-
-    ### Instructions
-    1) Read the context and use it for continuity when relevant.
-    2) If unrelated, answer normally without forcing past details.
-    3) Keep the tone conversational and precise.
-    4) Reply in plain text only.
-    """
-    return USER_TEMPLATE.format(
-        context=context.strip() or "N/A", user_input=user_input.strip()
-    )
+    # Otherwise, treat this transcript as the candidate's answer and advance Q&A
+    try:
+        nxt = brain_next_turn(session_id=sid, candidate_text=text)
+        response_payload = {
+            "session_id": sid,
+            "item": item,           # transcript chunk
+            "ai_question": nxt["question"],  # next grounded question JSON (with citations)
+            "coverage": nxt.get("coverage"),
+        }
+        return JSONResponse(response_payload)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "session_id": sid,
+                "item": item,
+                "error": "interview_brain_failed",
+                "detail": str(e),
+            },
+        )
